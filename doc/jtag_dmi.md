@@ -59,15 +59,12 @@ make the `IDCODE`, `DTMCSR`, and `DMIACCESS` registers accessible.
 OpenOCD can remap the registers using the config script.
 
 ```
-set _CHIPNAME riscv
-jtag newtap $_CHIPNAME cpu -irlen 6 -expected-id 0x13631093
-set _TARGETNAME $_CHIPNAME.cpu
-target create $_TARGETNAME riscv -chain-position $_TARGETNAME -rtos riscv
-
 riscv set_ir idcode 0x09
 riscv set_ir dtmcs 0x22
 riscv set_ir dmi 0x23
 ```
+
+To find a suitable (or similar) configuration for your adapter you can have a look at OpenOCD's [interface](https://github.com/ntfreak/openocd/tree/master/tcl/interface) configuration snippets.
 
 ### FPGA IR Lengths
 
@@ -86,7 +83,9 @@ The IR length is different between FPGA families. Here is a non exhaustive list 
 | `xcvu13p`, `7v2000t`, `7vx1140t`, `xcvu9p`, `xcvu11p`, `vu160`, `vu190`, `vu440`                                                                                  | 24        | `0x249249` | `0x8a4924` | `0x8e4924` |
 | `7vh870t`                                                                                                                                                         | 38        | ?          | ?          | ?          |
 
-FPGA ID are as follows:
+### FPGA `IDCODES`
+
+The four MSBs additional encodes the version of the FPGA. So for `7a15t` version `1` you would get an `IDCODE` of `32'h1362E093` and for version `2` you would get `32'h2362E093` etc.
 
 | Part Nr.   | FPGA ID Code   |     | Part Nr.   | FPGA ID Code   |
 | ---------- | -------------- | --- | ---------- | -------------- |
@@ -132,3 +131,39 @@ FPGA ID are as follows:
 | `ku040`    | `32'h03822093` |     | `xcvu9p`   | `32'h04B31093` |
 | `ku060`    | `32'h03919093` |     | `xcvu11p`  | `32'h04B42093` |
 | `ku085`    | `32'h0390F093` |     | `xcvu13p`  | `32'h04B51093` |
+
+### Example OpenOCD Configuration
+
+#### Zedboard
+
+The Zedboard uses a custom [Digilent SMT2 USB-JTAG](https://github.com/ntfreak/openocd/blob/master/tcl/interface/ftdi/digilent_jtag_smt2.cfg) module. Additionally it contains a second TAP containing the Arm core, the tap can be configured as well to avoid warning related to the undetected TAP.
+
+The FPGA contains a second version Xilinx device `7z020`, hence `IDCODE` (`0x23727093` see list above). Finally, IR Length is 6, mapping the `IDCODE` to `0x09`, `DTMCS` to `0x22` and `DMI` to `0x23` (see list above).
+
+```tcl
+interface ftdi
+transport select jtag
+
+ftdi_vid_pid 0x0403 0x6014
+
+ftdi_layout_init 0x2088 0x3f8b
+ftdi_layout_signal nSRST -data 0x2000
+ftdi_layout_signal GPIO2 -data 0x2000
+ftdi_layout_signal GPIO1 -data 0x0200
+ftdi_layout_signal GPIO0 -data 0x0100
+
+set _CHIPNAME riscv
+jtag newtap $_CHIPNAME cpu -irlen 6 -expected-id 0x23727093
+
+# just to avoid a warning about the auto-detected arm core
+jtag newtap arm_unused tap -irlen 4 -expected-id 0x4ba00477
+
+set _TARGETNAME $_CHIPNAME.cpu
+target create $_TARGETNAME riscv -chain-position $_TARGETNAME -coreid 0x3e0
+
+riscv set_ir idcode 0x09
+riscv set_ir dtmcs 0x22
+riscv set_ir dmi 0x23
+
+adapter_khz     1000
+```
